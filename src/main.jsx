@@ -1,3 +1,4 @@
+import { createRoot } from "react-dom/client";
 import { useMemo, useState } from "react";
 import {
   Activity,
@@ -193,3 +194,5 @@ function App() {
 }
 
 export default App;
+
+createRoot(document.getElementById("root")).render(<App />);
