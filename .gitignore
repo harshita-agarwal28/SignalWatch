@@ -1,0 +1,19 @@
+node_modules/
+
+# Local environment files and secrets
+.env
+.env.*
+!.env.example
+
+# Generated build output
+dist/
+frontend/dist/
+backend/dist/
+
+# Local Prisma/SQLite database
+backend/prisma/*.db
+backend/prisma/*.db-journal
+
+# Local logs and tooling state
+*.log
+.DS_Store

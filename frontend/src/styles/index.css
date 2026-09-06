@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #07111f;
+  color: #f3f7fb;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* ---------- Focus & accessibility ---------- */
+:focus-visible {
+  outline: 2px solid #55d6be;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: rgba(85, 214, 190, 0.28);
+  color: #f3f7fb;
+}
+
+/* ---------- Scrollbars ---------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1c3a4d transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #1c3a4d;
+  border-radius: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------- Atmospheric background: layered radial glows + faint grid ---------- */
+.observatory-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(60% 45% at 14% 8%, rgba(85, 214, 190, 0.10), transparent 60%),
+    radial-gradient(50% 40% at 90% 18%, rgba(155, 132, 255, 0.10), transparent 60%),
+    radial-gradient(70% 50% at 50% 100%, rgba(102, 163, 255, 0.07), transparent 60%),
+    #07111f;
+}
+
+.observatory-grid {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background-image:
+    linear-gradient(rgba(85, 214, 190, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(85, 214, 190, 0.05) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: radial-gradient(75% 60% at 50% 20%, black, transparent);
+}
+
+.ambient-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(60px);
+  pointer-events: none;
+}
+
+/* ---------- Glass surface ---------- */
+.glass-panel {
+  background: linear-gradient(180deg, rgba(16, 40, 58, 0.7), rgba(13, 27, 42, 0.7));
+  border: 1px solid #1c3a4d;
+  backdrop-filter: blur(14px);
+}
+
+/* ---------- Card hover elevation ---------- */
+.hover-lift {
+  transition: transform 220ms ease, border-color 220ms ease, box-shadow 220ms ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  border-color: rgba(85, 214, 190, 0.45);
+}
+
+/* ---------- Skeleton shimmer ---------- */
+.skeleton {
+  background: linear-gradient(90deg, #10283a 0%, #16344a 40%, #10283a 80%);
+  background-size: 800px 100%;
+  animation: shimmer 1.6s infinite linear;
+}
+
+/* ---------- Scan line inside hero card ---------- */
+.scan-line-wrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 90px;
+  background: linear-gradient(180deg, transparent, rgba(245, 185, 66, 0.10), transparent);
+}
+
+/* ---------- Reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
