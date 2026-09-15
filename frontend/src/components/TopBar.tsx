@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Bell, Menu, RefreshCw, Search } from 'lucide-react'
 import { formatClock, timeAgo } from '../utils/format'
+import { DemoControls } from './DemoControls'
 
 interface TopBarProps {
   onOpenMobileMenu: () => void
@@ -57,6 +58,8 @@ export function TopBar({ onOpenMobileMenu, onOpenSearch, unreadNotifications, la
       >
         <RefreshCw size={17} className={isRefreshing ? 'animate-spin' : ''} aria-hidden="true" />
       </button>
+
+      <DemoControls />
 
       <button
         type="button"

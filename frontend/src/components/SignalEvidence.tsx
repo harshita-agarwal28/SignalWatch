@@ -3,6 +3,7 @@ import { CheckCircle2, Eye, Sparkles } from 'lucide-react'
 import type { MeaningfulChange } from '../types/market'
 import { getConfidenceLabel } from '../utils/attention'
 import { usePrefersReducedMotion } from '../hooks/useMediaQuery'
+import { timeAgo } from '../utils/format'
 
 interface SignalEvidenceProps {
   signal: MeaningfulChange
@@ -22,6 +23,10 @@ export function SignalEvidence({ signal, onMarkReviewed }: SignalEvidenceProps) 
     >
       <div className="border-t border-border px-5 pb-5 pt-4">
         <h4 className="font-display text-sm font-medium text-ink">Why this is being surfaced</h4>
+        <p className="mt-0.5 text-[11px] text-muted">
+          Captured {timeAgo(signal.detectedAt)}, when this was detected &mdash; the price above updates live and may
+          have moved since.
+        </p>
 
         <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           {signal.evidence.map((item) => (

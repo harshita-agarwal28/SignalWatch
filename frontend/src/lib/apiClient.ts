@@ -89,6 +89,10 @@ export const api = {
 
   dashboard: () => request<DashboardResponse>('/api/dashboard'),
 
+  // Same payload as dashboard(), but never advances the "last checked"
+  // cursor - safe to call any time the watchlist changes mid-session.
+  dashboardSummary: () => request<DashboardResponse>('/api/dashboard/summary'),
+
   watchlist: () => request<{ items: WatchlistApiItem[] }>('/api/watchlist'),
 
   addToWatchlist: (ticker: string, priority: Priority, personalReason?: string) =>
@@ -121,4 +125,17 @@ export const api = {
     request<void>(`/api/symbols/${ticker}/notes/${noteId}`, { method: 'DELETE' }),
 
   events: () => request<{ events: MarketEvent[] }>('/api/events'),
+
+  // Demo-only controls (simulated mode). See backend/src/market/market.routes.ts
+  // and backend/src/dashboard/dashboard.routes.ts for what these actually do.
+  demoPresets: () =>
+    request<{ enabled: boolean; presets: { id: string; ticker: string; label: string }[] }>('/api/demo/presets'),
+
+  fireDemoShock: (preset: string) =>
+    request<{ ok: true; ticker: string; label: string; signalCreated: boolean }>('/api/demo/shock', {
+      method: 'POST',
+      body: JSON.stringify({ preset }),
+    }),
+
+  resetDemo: () => request<DashboardResponse>('/api/dashboard/reset-demo', { method: 'POST' }),
 }

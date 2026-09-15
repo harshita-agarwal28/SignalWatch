@@ -93,7 +93,7 @@ export interface WatchlistApiItem {
 export interface MarketSnapshot {
   status: MarketStatus
   broadMarketMovePercent: number
-  pulse: 'quiet' | 'balanced' | 'heated'
+  pulse: 'falling' | 'flat' | 'rising'
   pulseScore: number
   sectorMovePercent: Record<string, number>
   summary: string

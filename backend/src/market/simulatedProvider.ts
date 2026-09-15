@@ -36,10 +36,10 @@ export class SimulatedMarketProvider implements MarketDataProvider {
         previousClose: history[history.length - 2] ?? s.basePrice,
         changePercent: 0,
         changeAbsolute: 0,
-        volume: s.baseVolume * 0.4,
+        volume: s.baseVolume,
         averageVolume: s.baseVolume,
         typicalMovePercent: s.baseVolatility * 100,
-        volumeRatio: 0.4,
+        volumeRatio: 1,
         history,
         freshness: 'live',
         updatedAt: new Date().toISOString(),
@@ -70,7 +70,14 @@ export class SimulatedMarketProvider implements MarketDataProvider {
     this.tickHandlers.push(handler)
   }
 
-  private applyShock(ticker: string, movePercent: number, volumeRatio: number) {
+  /**
+   * Manually injects a price/volume move on demand. Used both by the
+   * guaranteed startup seeds (see start()) and by the authenticated
+   * POST /api/demo/shock route, which exists so a live presentation never
+   * has to hope the random walk produces something interesting in a fixed
+   * time window - it can be triggered on the spot instead.
+   */
+  applyShock(ticker: string, movePercent: number, volumeRatio: number) {
     const snap = this.state.get(ticker)
     const meta = UNIVERSE.find((u) => u.ticker === ticker)
     if (!snap || !meta) return
@@ -100,15 +107,39 @@ export class SimulatedMarketProvider implements MarketDataProvider {
       // Random walk with per-symbol volatility, tiny drift, and an occasional
       // extra "shock" tick to keep a long-running demo fresh.
       const sigma = meta.baseVolatility / Math.sqrt(48) // roughly scale a daily sigma down to a per-tick sigma
+      // 0.3% per tick. At the old 1.5%, across a 48-tick window that's
+      // 1-(1-0.015)^48 ~= 51% chance ANY given stock gets an extra outsized
+      // move every single cycle - not a rare "surprise," almost a
+      // certainty, for every stock, every few minutes. That's why nothing
+      // ever stayed quiet. At 0.3%, that same math works out to roughly a
+      // 13% chance per stock per window - occasional and noticeable, not
+      // constant.
       const shockRoll = Math.random()
-      const shockMultiplier = shockRoll < 0.015 ? (Math.random() < 0.5 ? -1 : 1) * (3 + Math.random() * 3) : 1
+      const shockMultiplier = shockRoll < 0.003 ? (Math.random() < 0.5 ? -1 : 1) * (3 + Math.random() * 3) : 1
       const pctMove = gaussianRandom() * sigma * shockMultiplier
 
       const newPrice = Math.max(snap.price * (1 + pctMove), 0.5)
       const dayOpenPrice = snap.history[snap.history.length - 1] ?? snap.previousClose
       const changePercent = ((newPrice - snap.previousClose) / snap.previousClose) * 100
-      const volumeJitter = 1 + (Math.random() - 0.5) * 0.15
-      const volume = Math.abs(shockMultiplier) > 1 ? snap.volume * 1.4 * volumeJitter : snap.volume * volumeJitter
+
+      // Volume is anchored to the stock's fixed baseline every tick, not
+      // carried forward from the previous tick. It used to be
+      // `snap.volume * jitter` - a compounding random walk with no reset,
+      // identical in kind to the price-drift problem above but with no
+      // equivalent fix. Over a long-running session that let volumeRatio
+      // wander arbitrarily far past the 1.2x "unusual volume" threshold for
+      // every stock, with nothing unusual actually happening - which is also
+      // why no stock could ever come back to "quiet" once it had drifted:
+      // signalDetector.ts flags a stock the moment volumeRatio crosses 1.2x,
+      // regardless of price. An ordinary tick now stays within roughly
+      // 0.85x-1.15x of baseline by construction, comfortably under that
+      // threshold; only a real shock (the rare in-tick event below, or a
+      // manual/demo shock) produces a genuine, temporary spike.
+      const isVolumeShockTick = Math.abs(shockMultiplier) > 1
+      const volumeJitter = 1 + (Math.random() - 0.5) * 0.3
+      const volume = isVolumeShockTick
+        ? meta.baseVolume * (1.3 + Math.random() * 0.6)
+        : meta.baseVolume * volumeJitter
       const volumeRatio = volume / meta.baseVolume
 
       const history = [...snap.history.slice(1), newPrice]
@@ -122,7 +153,12 @@ export class SimulatedMarketProvider implements MarketDataProvider {
         volume,
         volumeRatio,
         history,
-        typicalMovePercent: Math.max(typicalMovePercent, meta.baseVolatility * 60),
+        // Floor at 80% of the stock's real assigned volatility rather than
+        // its exact value, so a stock that's genuinely been calmer than
+        // usual over its last 30 ticks can still show that - the floor only
+        // exists to stop the computed value from collapsing near zero, not
+        // to override real recent history.
+        typicalMovePercent: Math.max(typicalMovePercent, meta.baseVolatility * 80),
         freshness: 'live',
         updatedAt: new Date().toISOString(),
       }
@@ -131,9 +167,18 @@ export class SimulatedMarketProvider implements MarketDataProvider {
       void dayOpenPrice
     }
 
-    // Roll to a new "trading day" baseline every 500 ticks so changePercent
-    // doesn't drift meaninglessly forever in a long-running demo instance.
-    if (this.tickCount % 500 === 0) {
+    // Roll to a new "trading day" baseline every 48 ticks - deliberately the
+    // SAME constant used above to scale sigma (`baseVolatility / sqrt(48)`),
+    // so "one reset window" and "one simulated trading day" are actually the
+    // same length of time. They'd previously drifted apart (this was 90 for
+    // a while): 90 ticks is nearly two simulated days of accumulated
+    // random-walk drift before ever resetting, compared against a
+    // typical-move floor calibrated for ONE day - so an ordinary, unshocked
+    // stock would statistically approach or cross the "outside range"
+    // threshold by the end of most cycles, with nothing unusual actually
+    // happening. Keeping these two constants equal is what keeps a quiet
+    // stock's cumulative drift centered near 1x typical, not 1.9x.
+    if (this.tickCount % 48 === 0) {
       for (const [ticker, snap] of this.state) {
         this.state.set(ticker, { ...snap, previousClose: snap.price })
       }
@@ -150,6 +195,14 @@ function seedHistory(basePrice: number, volatility: number): number[] {
     price = price * (1 + gaussianRandom() * volatility * 0.5)
     history.push(price)
   }
+  // previousClose is read from history[length - 2], so it needs to start
+  // close to basePrice (a normal single-tick wiggle away) - otherwise the
+  // unconstrained random walk above can leave it several percent away from
+  // basePrice purely by chance, and the very first real tick after startup
+  // would show a large, meaningless changePercent for every stock at once,
+  // before anything has actually happened.
+  const tickSigma = volatility / Math.sqrt(48)
+  history[history.length - 2] = basePrice * (1 - gaussianRandom() * tickSigma)
   history[history.length - 1] = basePrice
   return history
 }

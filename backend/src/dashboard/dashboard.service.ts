@@ -6,21 +6,16 @@ import { getWatchlistViewModels } from '../watchlist/watchlist.service'
 const SIGNAL_WINDOW_MS = 7 * 24 * 60 * 60_000 // show up to a week of signal history per ticker
 
 /**
- * Builds the full dashboard payload for a user AND advances their
- * "last checked" cursor. This is the single most important piece of product
- * logic in the app: "since you last checked" is computed server-side, from a
- * timestamp stored on the User row, so it is identical whether the person
- * opens the app on their phone or their laptop - not something reconstructed
- * from client-side localStorage, which would silently break across devices.
- *
- * The previous cursor value is captured BEFORE it is updated, so the
- * response can say "here's what's new since <previousCheckedAt>" and then
- * safely move the cursor forward for next time.
+ * Computes the full dashboard payload for a user WITHOUT touching the
+ * "last checked" cursor. This is the piece that needs to be re-run any time
+ * something that feeds it changes mid-session - most importantly, adding or
+ * removing a watchlist ticker, which changes which signals/events/radar
+ * numbers are "yours". Pulled out of buildDashboard() so it can be reused by
+ * both GET /api/dashboard (which does advance the cursor, once per app
+ * load) and GET /api/dashboard/summary (which never does, so it's safe to
+ * call as often as the watchlist changes).
  */
-export async function buildDashboard(userId: string) {
-  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
-  const previousCheckedAt = user.lastCheckedAt
-
+export async function computeDashboardPayload(userId: string, previousCheckedAt: Date, greetingName: string) {
   const watchlist = await prisma.watchlistItem.findMany({ where: { userId } })
   const tickers = watchlist.map((w) => w.ticker)
 
@@ -66,9 +61,6 @@ export async function buildDashboard(userId: string) {
 
   const watchlistViewModels = await getWatchlistViewModels(userId)
 
-  // Advance the cursor now that we've computed the diff against the old value.
-  await prisma.user.update({ where: { id: userId }, data: { lastCheckedAt: new Date() } })
-
   // Radar score: the average of each watchlisted stock's anomalyRatio (how
   // many multiples of its own normal range it's moving right now), scaled so
   // 100 = every tracked stock averaging 3x its typical daily move. This is
@@ -81,7 +73,7 @@ export async function buildDashboard(userId: string) {
   const attentionScore = Math.round(Math.min(100, (avgRatio / 3) * 100))
 
   return {
-    greetingName: user.name,
+    greetingName,
     previousCheckedAt: previousCheckedAt.toISOString(),
     stats: {
       attentionCount: unacknowledged.length,
@@ -98,4 +90,32 @@ export async function buildDashboard(userId: string) {
       newSignalsCount: unacknowledged.length,
     },
   }
+}
+
+/**
+ * Builds the full dashboard payload for a user AND advances their
+ * "last checked" cursor. This is the single most important piece of product
+ * logic in the app: "since you last checked" is computed server-side, from a
+ * timestamp stored on the User row, so it is identical whether the person
+ * opens the app on their phone or their laptop - not something reconstructed
+ * from client-side localStorage, which would silently break across devices.
+ *
+ * The previous cursor value is captured BEFORE it is updated, so the
+ * response can say "here's what's new since <previousCheckedAt>" and then
+ * safely move the cursor forward for next time. This should only ever be
+ * called once per app load (see GET /api/dashboard) - anything that needs to
+ * re-run the same computation mid-session (e.g. after a watchlist change)
+ * should call computeDashboardPayload() directly instead, via
+ * GET /api/dashboard/summary, so the cursor isn't disturbed.
+ */
+export async function buildDashboard(userId: string) {
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: userId } })
+  const previousCheckedAt = user.lastCheckedAt
+
+  const payload = await computeDashboardPayload(userId, previousCheckedAt, user.name)
+
+  // Advance the cursor now that we've computed the diff against the old value.
+  await prisma.user.update({ where: { id: userId }, data: { lastCheckedAt: new Date() } })
+
+  return payload
 }

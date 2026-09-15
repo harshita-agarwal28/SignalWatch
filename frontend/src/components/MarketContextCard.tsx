@@ -14,18 +14,28 @@ export function MarketContextCard({ snapshot }: MarketContextCardProps) {
       </div>
 
       <div className="mt-5">
-        <div className="relative h-2 rounded-full bg-gradient-to-r from-signal/30 via-amber/40 to-coral/40">
+        <div className="relative h-2 rounded-full bg-gradient-to-r from-coral/40 via-amber/30 to-mint/40">
           <div
             className="absolute -top-1.5 flex h-5 w-5 -translate-x-1/2 items-center justify-center"
             style={{ left: `${snapshot.pulseScore}%` }}
           >
-            <span className="h-3 w-3 rounded-full border-2 border-void bg-ink shadow-[0_0_0_3px_rgba(85,214,190,0.35)]" />
+            <span
+              className="h-3 w-3 rounded-full border-2 border-void bg-ink"
+              style={{
+                boxShadow:
+                  snapshot.pulse === 'rising'
+                    ? '0 0 0 3px rgba(85,214,190,0.35)'
+                    : snapshot.pulse === 'falling'
+                      ? '0 0 0 3px rgba(255,107,107,0.35)'
+                      : '0 0 0 3px rgba(245,185,66,0.35)',
+              }}
+            />
           </div>
         </div>
         <div className="mt-2 flex justify-between text-[11px] text-muted">
-          <span>Quiet</span>
-          <span>Balanced</span>
-          <span>Heated</span>
+          <span>Down</span>
+          <span>Flat</span>
+          <span>Up</span>
         </div>
       </div>
 

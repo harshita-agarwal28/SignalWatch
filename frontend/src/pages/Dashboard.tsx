@@ -95,7 +95,7 @@ export function Dashboard({
           upcomingEventsCount={stats.upcomingEventsCount}
           lastVisit={lastVisit}
         />
-        <RadarPanel attentionScore={radar.attentionScore} trackedCount={radar.trackedCount} newSignalsCount={radar.newSignalsCount} watchlist={watchlistItems} />
+        <RadarPanel trackedCount={radar.trackedCount} newSignalsCount={radar.newSignalsCount} watchlist={watchlistItems} />
       </div>
 
       {/* Since you last checked */}
@@ -200,7 +200,7 @@ export function Dashboard({
           snapshot={
             marketSnapshot ?? {
               status: 'open',
-              pulse: 'balanced',
+              pulse: 'flat',
               pulseScore: 50,
               sectorMovePercent: {},
               broadMarketMovePercent: 0,

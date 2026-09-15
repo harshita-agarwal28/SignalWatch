@@ -2,12 +2,54 @@ import { Router } from 'express'
 import { z } from 'zod'
 import { requireAuth, type AuthedRequest } from '../auth/auth.middleware'
 import { prisma } from '../db'
+import { env } from '../env'
 import { asyncHandler, HttpError } from '../utils/http'
 import { marketState } from './marketState'
 import { detectSignal } from './signalDetector'
 import { UNIVERSE } from './universe'
 
 export const marketRouter = Router()
+
+// A small, curated set of scenarios for live demos - deliberately not
+// free-form (ticker + arbitrary %), so there's no way to type something
+// nonsensical mid-presentation. Each maps to a realistic, named story.
+const DEMO_SHOCK_PRESETS: Record<string, { ticker: string; label: string; movePercent: number; volumeRatio: number }> = {
+  'tsla-crash': { ticker: 'TSLA', label: 'Tesla drops on heavy volume', movePercent: -0.062, volumeRatio: 1.8 },
+  'nvda-volume': { ticker: 'NVDA', label: 'NVIDIA spikes on unusual volume', movePercent: 0.021, volumeRatio: 2.4 },
+  'aapl-rally': { ticker: 'AAPL', label: 'Apple rallies past its normal range', movePercent: 0.052, volumeRatio: 1.6 },
+}
+
+marketRouter.get(
+  '/demo/presets',
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    res.json({
+      enabled: env.marketDataMode === 'simulated',
+      presets: Object.entries(DEMO_SHOCK_PRESETS).map(([id, p]) => ({ id, ticker: p.ticker, label: p.label })),
+    })
+  })
+)
+
+marketRouter.post(
+  '/demo/shock',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    if (env.marketDataMode !== 'simulated') {
+      throw new HttpError(400, 'Demo shocks only work in simulated mode (MARKET_DATA_MODE=simulated)')
+    }
+    const presetId = String(req.body.preset ?? '')
+    const preset = DEMO_SHOCK_PRESETS[presetId]
+    if (!preset) throw new HttpError(400, `Unknown preset: ${presetId}`)
+
+    const signal = await marketState.forceShock(preset.ticker, preset.movePercent, preset.volumeRatio)
+    res.json({
+      ok: true,
+      ticker: preset.ticker,
+      label: preset.label,
+      signalCreated: !!signal,
+    })
+  })
+)
 
 marketRouter.get(
   '/symbols/search',
@@ -86,16 +128,27 @@ marketRouter.get(
   '/market',
   asyncHandler(async (_req, res) => {
     const { broadMarketMovePercent, sectorAverages } = marketState.buildMarketContext()
-    // The Quiet/Balanced/Heated axis is about how MUCH the market is moving,
-    // not which direction - a broad -3% selloff is exactly as "heated" as a
-    // broad +3% rally, and treating them differently would mean a crash
-    // could show up as "quiet," which is indefensible. So this scales off
-    // the magnitude of the average move, not its sign; direction (if it
-    // matters) belongs in the summary copy, not the temperature itself.
-    const magnitude = Math.abs(broadMarketMovePercent)
-    const pulseScore = clamp(magnitude * 24, 0, 100)
-    const pulse = pulseScore < 33 ? 'quiet' : pulseScore < 66 ? 'balanced' : 'heated'
-    const direction = broadMarketMovePercent >= 0 ? 'up' : 'down'
+    // "Pulse" answers: is the whole market net moving one way today, or is
+    // today's activity really coming from individual stocks/sectors pulling
+    // in different directions? That's a DIRECTION question, not an activity
+    // one - and it's deliberately the same broadMarketMovePercent number
+    // signalDetector.ts already uses to decide "Broad market movement" vs
+    // "Company-specific movement" on individual signal cards, so this
+    // widget and those explanations always agree with each other. A day
+    // where sectors are split (some sharply up, some sharply down) nets out
+    // near zero here - correctly "Flat" by this definition, even though
+    // there's plenty happening underneath (see the Sector movement panel
+    // for that dispersion instead; that's a different question on purpose).
+    const FLAT_BAND_PERCENT = 0.3 // net moves smaller than this read as "Flat"
+    const POSITION_SCALE = 25 // %-of-bar per 1% of net move; +/-2% pins to an edge
+
+    const pulse: 'falling' | 'flat' | 'rising' =
+      Math.abs(broadMarketMovePercent) < FLAT_BAND_PERCENT
+        ? 'flat'
+        : broadMarketMovePercent > 0
+          ? 'rising'
+          : 'falling'
+    const pulseScore = clamp(50 + broadMarketMovePercent * POSITION_SCALE, 0, 100)
     res.json({
       status: 'open',
       broadMarketMovePercent,
@@ -103,11 +156,11 @@ marketRouter.get(
       pulseScore: Math.round(pulseScore),
       sectorMovePercent: sectorAverages,
       summary:
-        pulse === 'heated'
-          ? `The broader market itself is moving today (avg. ${direction} ${magnitude.toFixed(1)}%), not just a handful of names.`
-          : pulse === 'balanced'
-            ? "The broader market is calm. Most of today's movement is coming from individual companies."
-            : 'Markets are quiet across the board today.',
+        pulse === 'rising'
+          ? `The broader market is trending up today (avg. +${broadMarketMovePercent.toFixed(1)}%), not just a handful of names.`
+          : pulse === 'falling'
+            ? `The broader market is trending down today (avg. ${broadMarketMovePercent.toFixed(1)}%), not just a handful of names.`
+            : "The broader market is flat on net. Today's movement is coming from individual companies or sectors pulling in different directions, not a broad move.",
       lastUpdated: new Date().toISOString(),
     })
   })

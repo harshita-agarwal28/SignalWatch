@@ -3,7 +3,6 @@ import { computeAnomalyRatio } from '../utils/attention'
 import type { WatchlistApiItem } from '../types/market'
 
 interface RadarPanelProps {
-  attentionScore: number
   trackedCount: number
   newSignalsCount: number
   watchlist: WatchlistApiItem[]
@@ -31,10 +30,10 @@ const RATIO_CAP = 3 // beyond 3x its typical range, a stock just pins to the edg
  * blips don't overlap) - it's the one purely decorative choice left, and
  * unlike the previous version, it's the only one.
  */
-export function RadarPanel({ attentionScore, trackedCount, newSignalsCount, watchlist }: RadarPanelProps) {
+export function RadarPanel({ trackedCount, newSignalsCount, watchlist }: RadarPanelProps) {
   const reduceMotion = usePrefersReducedMotion()
 
-  const blips = watchlist.slice(0, 8).map((item, index) => {
+  const blips = watchlist.map((item, index) => {
     const angle = (index / Math.max(watchlist.length, 1)) * Math.PI * 2 - Math.PI / 2
     const ratio = computeAnomalyRatio(item.quote)
     const radius = MIN_RADIUS + (Math.min(ratio, RATIO_CAP) / RATIO_CAP) * (MAX_RADIUS - MIN_RADIUS)
@@ -96,24 +95,13 @@ export function RadarPanel({ attentionScore, trackedCount, newSignalsCount, watc
           ))}
           <circle cx="110" cy="110" r="3" fill="#F3F7FB" />
         </svg>
-
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
-          <span className="font-display text-3xl font-semibold text-ink">{attentionScore}</span>
-          <span className="mt-0.5 text-[10.5px] leading-tight text-muted">
-            avg. &times; normal range
-          </span>
-        </div>
       </div>
 
-      <div className="mt-auto grid grid-cols-2 gap-2 text-center">
-        <div className="rounded-xl border border-border bg-surface/60 py-2">
-          <div className="font-display text-lg font-semibold text-ink">{trackedCount}</div>
-          <div className="text-[11px] text-muted">tracked</div>
+      <div className="mt-auto rounded-xl border border-border bg-surface/60 py-2.5 text-center">
+        <div className="font-display text-lg font-semibold text-ink">
+          {newSignalsCount} <span className="text-muted">of</span> {trackedCount}
         </div>
-        <div className="rounded-xl border border-border bg-surface/60 py-2">
-          <div className="font-display text-lg font-semibold text-mint">{newSignalsCount}</div>
-          <div className="text-[11px] text-muted">new signals</div>
-        </div>
+        <div className="text-[11px] text-muted">need attention</div>
       </div>
     </div>
   )

@@ -61,6 +61,44 @@ class MarketState {
     return this.provider.getAllSnapshots()
   }
 
+  /**
+   * Manually fires a shock on a ticker and runs it through the exact same
+   * detection + persistence + broadcast pipeline the automatic tick loop
+   * uses - the only difference is it ignores the normal 15-minute cooldown,
+   * because the entire point of a manual trigger is "make this happen right
+   * now, on demand," for example during a live walkthrough where waiting on
+   * the random tick engine isn't an option. Only works when the simulated
+   * provider is active; a live data feed can't be told what to report.
+   */
+  async forceShock(ticker: string, movePercent: number, volumeRatio: number) {
+    if (!(this.provider instanceof SimulatedMarketProvider)) {
+      throw new Error('Manual shocks only work in simulated mode')
+    }
+    this.provider.applyShock(ticker, movePercent, volumeRatio)
+    const snap = this.provider.getSnapshot(ticker)
+    if (!snap) return null
+
+    await this.persistSnapshots([snap])
+    for (const cb of this.tickBroadcasters) cb({ snapshots: [snap] })
+
+    const context = this.buildMarketContext()
+    const hasNearEvent = await this.hasUpcomingEventWithin(snap.ticker, 3)
+    const detected = detectSignal(snap, {
+      broadMarketMovePercent: context.broadMarketMovePercent,
+      sectorMovePercent: this.sectorPeerAverage(snap, context.broadMarketMovePercent),
+      hasNearEvent,
+    })
+    if (!detected) return null
+
+    this.lastSignalAt.set(snap.ticker, {
+      at: Date.now(),
+      severity: ATTENTION_SEVERITY[detected.attention] ?? 0,
+    })
+    const saved = await persistSignal(detected)
+    for (const cb of this.signalBroadcasters) cb({ signal: saved })
+    return saved
+  }
+
   /** Broad market average move and per-sector average move, for signal context. */
   buildMarketContext(): { broadMarketMovePercent: number; sectorAverages: Record<string, number> } {
     const snapshots = this.provider.getAllSnapshots()

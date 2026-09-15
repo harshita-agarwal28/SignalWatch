@@ -22,7 +22,10 @@ three server-side, with plain arithmetic you can audit, not a black box.
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
+- [Deployment](#deployment)
 - [Project structure](#project-structure)
+- [Design notes](#design-notes)
+- [Roadmap](#roadmap)
 
 ---
 
@@ -192,6 +195,28 @@ MARKET_DATA_MODE=live
 FINNHUB_API_KEY=your_key_here
 ```
 
+## Deployment
+
+The backend serves the built frontend directly when it finds one on disk
+(`backend/src/app.ts`), so the whole app can run as a single deployable
+service with one URL and no CORS configuration to get right in production.
+
+Recommended: any Node-friendly host with a persistent process and writable
+disk — for example [Render](https://render.com)'s free web service tier.
+
+1. Push this repository to a Git host.
+2. Create a new web service and connect the repository.
+3. Build command: `npm run install:all && npm run build`
+4. Start command: `npm run db:push --prefix backend && npm run seed --prefix backend && npm run start --prefix backend`
+5. Environment variables: `JWT_SECRET` (a real random value), `CORS_ORIGIN`
+   (your deployed URL), `MARKET_DATA_MODE=simulated`.
+6. Optionally mount a persistent disk for the database if you want it to
+   survive restarts; it isn't required, since the start command reseeds it.
+
+Static hosts like GitHub Pages can't run this app on their own — the tick
+engine and WebSocket layer need a persistent Node process, and SQLite needs a
+writable disk. They're a good fit for documentation, not for the app itself.
+
 ## Project structure
 
 ```
@@ -215,5 +240,45 @@ frontend/
     pages/, components/       UI
 ```
 
+## Design notes
 
+A few decisions worth knowing about before reading the code:
 
+- **State lives on the server, not the browser.** The "since you last
+  checked" cursor is a timestamp on the user row, updated only when the
+  dashboard is loaded. This is the one feature that genuinely requires a
+  backend — a client-only version of this idea can't work across devices.
+- **Market data is a mutable snapshot, not an append-only log.** Each symbol
+  has one current-state row plus a short rolling history, because the
+  product only ever needs "what's true right now" and a small window for
+  typical-move math. Detected signals, by contrast, *are* append-only,
+  because "what changed since you checked" needs to be a durable fact.
+- **Acknowledging a signal is per-account, not per-device**, stored in a
+  separate join table from the signal itself — the signal is an objective
+  market fact everyone shares; whether you've reviewed it is personal.
+- **Freshness is explicit, never silently hidden.** Every quote and signal
+  carries a `live` / `delayed-15m` / `stale` / `missing` flag. Nothing is
+  fabricated to fill a gap — a stale price is shown as stale.
+- **One tick per symbol, shared by every user watching it** — cost scales
+  with the number of tracked symbols, not with the number of users times
+  symbols. New ticks and signals are pushed once and broadcast to every
+  connected client instead of each client polling on its own timer.
+- **No fabricated chart history.** The stock detail chart shows exactly the
+  rolling window the backend actually tracks, honestly labeled, rather than
+  a fake 1-year range built from a handful of real data points.
+
+## Roadmap
+
+Left out deliberately, not by oversight:
+
+- **Push notifications / email delivery.** Preferences are already stored
+  per user, but no delivery worker exists yet — nothing pretends to send
+  something it isn't.
+- **OAuth / password reset.** Email + password with JWT covers the auth
+  surface this project needs today.
+- **Horizontal scaling.** The tick engine currently holds state in one
+  process. At real scale, this would move to a worker publishing over Redis
+  pub/sub, with Postgres replacing SQLite once its single-writer model
+  becomes a bottleneck, and the symbol universe partitioned across workers.
+
+Contributions and issues are welcome.

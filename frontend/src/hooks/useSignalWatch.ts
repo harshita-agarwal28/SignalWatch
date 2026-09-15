@@ -47,7 +47,11 @@ export function useSignalWatch() {
         if (cancelled) return
         setGreetingName(data.greetingName)
         setPreviousCheckedAt(data.previousCheckedAt)
-        setSignals(data.signals)
+        // Only a true page reload (this effect) should make a reviewed
+        // signal disappear for good - mid-session it should stay visible
+        // but faded (see SignalCard's opacity-70), so this filter is
+        // deliberately NOT applied in refreshSummary() below.
+        setSignals(data.signals.filter((s) => !s.acknowledged))
         setWatchlistItems(data.watchlist)
         setEvents(data.events)
         setStats(data.stats)
@@ -126,15 +130,42 @@ export function useSignalWatch() {
     })
   }, [])
 
-  const addCompany = useCallback(async (ticker: string, priority: Priority, reason?: string) => {
-    const { items } = await api.addToWatchlist(ticker, priority, reason)
-    setWatchlistItems(items)
+  // Adding/removing a ticker changes which signals, events, and radar
+  // numbers belong to this account - re-pull those from the no-cursor
+  // summary endpoint so the hero stat card and radar don't sit frozen at
+  // whatever they were when the page first loaded (see dashboard.service.ts
+  // computeDashboardPayload / GET /api/dashboard/summary).
+  const refreshSummary = useCallback(async () => {
+    try {
+      const data = await api.dashboardSummary()
+      setSignals(data.signals)
+      setEvents(data.events)
+      setStats(data.stats)
+      setRadar(data.radar)
+    } catch {
+      // Non-fatal: watchlistItems is already up to date from the add/remove
+      // response itself, so the page still works, just with stale stats
+      // until the next full reload.
+    }
   }, [])
 
-  const removeCompany = useCallback(async (ticker: string) => {
-    const { items } = await api.removeFromWatchlist(ticker)
-    setWatchlistItems(items)
-  }, [])
+  const addCompany = useCallback(
+    async (ticker: string, priority: Priority, reason?: string) => {
+      const { items } = await api.addToWatchlist(ticker, priority, reason)
+      setWatchlistItems(items)
+      await refreshSummary()
+    },
+    [refreshSummary]
+  )
+
+  const removeCompany = useCallback(
+    async (ticker: string) => {
+      const { items } = await api.removeFromWatchlist(ticker)
+      setWatchlistItems(items)
+      await refreshSummary()
+    },
+    [refreshSummary]
+  )
 
   const refresh = useCallback(() => {
     setIsRefreshing(true)
