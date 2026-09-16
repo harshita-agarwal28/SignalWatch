@@ -22,7 +22,6 @@ three server-side, with plain arithmetic you can audit, not a black box.
 - [Tech stack](#tech-stack)
 - [Getting started](#getting-started)
 - [Configuration](#configuration)
-- [Deployment](#deployment)
 - [Project structure](#project-structure)
 - [Design notes](#design-notes)
 - [Roadmap](#roadmap)
@@ -187,6 +186,7 @@ All backend configuration lives in `backend/.env` (see `.env.example`):
 | `DATABASE_URL` | `file:./dev.db` | SQLite connection string |
 | `MARKET_DATA_MODE` | `simulated` | `simulated` or `live` |
 | `FINNHUB_API_KEY` | — | Required only when `MARKET_DATA_MODE=live` — get a free key at [finnhub.io/register](https://finnhub.io/register) |
+| `TICK_INTERVAL_MS` | `5000` | Interval between market-engine ticks in milliseconds |
 
 To switch to live market data:
 
@@ -194,28 +194,6 @@ To switch to live market data:
 MARKET_DATA_MODE=live
 FINNHUB_API_KEY=your_key_here
 ```
-
-## Deployment
-
-The backend serves the built frontend directly when it finds one on disk
-(`backend/src/app.ts`), so the whole app can run as a single deployable
-service with one URL and no CORS configuration to get right in production.
-
-Recommended: any Node-friendly host with a persistent process and writable
-disk — for example [Render](https://render.com)'s free web service tier.
-
-1. Push this repository to a Git host.
-2. Create a new web service and connect the repository.
-3. Build command: `npm run install:all && npm run build`
-4. Start command: `npm run db:push --prefix backend && npm run seed --prefix backend && npm run start --prefix backend`
-5. Environment variables: `JWT_SECRET` (a real random value), `CORS_ORIGIN`
-   (your deployed URL), `MARKET_DATA_MODE=simulated`.
-6. Optionally mount a persistent disk for the database if you want it to
-   survive restarts; it isn't required, since the start command reseeds it.
-
-Static hosts like GitHub Pages can't run this app on their own — the tick
-engine and WebSocket layer need a persistent Node process, and SQLite needs a
-writable disk. They're a good fit for documentation, not for the app itself.
 
 ## Project structure
 
