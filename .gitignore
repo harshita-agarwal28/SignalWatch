@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Environment files - NEVER commit these, they contain secrets
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/.env
+
+# Local database
+*.db
+*.db-journal
+backend/prisma/dev.db
+backend/prisma/*.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

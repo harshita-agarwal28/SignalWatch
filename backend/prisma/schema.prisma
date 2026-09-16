@@ -1,0 +1,134 @@
+// SignalWatch data model.
+//
+// Design notes (see backend README for full reasoning):
+// - SQLite via a single file (dev.db) keeps the hackathon setup to zero external
+//   infra while still being a real relational schema with proper types and
+//   indices. Swapping to Postgres later is a one-line datasource change because
+//   nothing here uses SQLite-specific features.
+// - Market data (price/volume/history) is NOT modeled as an append-only tick log.
+//   It is a single mutable "current state" row per symbol (SymbolState), because
+//   the product only ever needs "what is true right now" plus a short rolling
+//   history for sparklines/typical-move math. An append-only tick table would
+//   grow unbounded for no product benefit at this scale.
+// - SignalEvent rows ARE append-only: each meaningful change we detect is logged
+//   once (with a cooldown so a sustained move doesn't spam duplicates) so that
+//   "what changed since you last checked" is a durable, queryable fact, not a
+//   snapshot diff computed from ephemeral state.
+// - Per-user "seen/reviewed" status is deliberately split from the SignalEvent
+//   itself (UserSignalAck) because the event is an objective fact about the
+//   market, while "did THIS user acknowledge it" is per-user and per-device by
+//   design (same account, any device, sees the same acknowledgement state).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  name          String
+  createdAt     DateTime @default(now())
+  lastCheckedAt DateTime @default(now())
+  emailAlerts   Boolean  @default(true)
+  dailyDigest   Boolean  @default(true)
+  reduceMotion  Boolean  @default(false)
+
+  watchlistItems WatchlistItem[]
+  acks           UserSignalAck[]
+  notes          StockNote[]
+}
+
+model WatchlistItem {
+  id             String   @id @default(cuid())
+  userId         String
+  ticker         String
+  priority       String   @default("normal") // "normal" | "important"
+  personalReason String?
+  addedAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, ticker])
+  @@index([userId])
+}
+
+// One row per symbol. Mutated in place by the market data provider every tick.
+model SymbolState {
+  ticker              String   @id
+  companyName         String
+  sector              String
+  price               Float
+  previousClose       Float
+  changePercent       Float
+  changeAbsolute      Float
+  volume              Float
+  averageVolume       Float
+  volumeRatio         Float
+  typicalMovePercent  Float
+  historyJson         String // JSON-encoded number[] of recent closes, newest last
+  freshness           String   @default("live") // "live" | "delayed-15m" | "stale" | "missing"
+  updatedAt           DateTime @updatedAt
+}
+
+// An immutable record of a detected meaningful change. New rows are only
+// created when the signal detector crosses a threshold for a ticker and the
+// per-ticker cooldown has elapsed (see market/signalDetector.ts).
+model SignalEvent {
+  id               String   @id @default(cuid())
+  ticker           String
+  headline         String
+  explanation      String
+  contextLabel     String
+  attention        String // "quiet" | "normal" | "worth-watching" | "high" | "event-soon"
+  confidence       String // "high" | "medium" | "low"
+  possibleExplanation String
+  causeConfirmed   Boolean  @default(false)
+  evidenceJson     String // JSON-encoded EvidenceItem[]
+  freshness        String
+  detectedAt       DateTime @default(now())
+
+  acks UserSignalAck[]
+
+  @@index([ticker, detectedAt])
+}
+
+// Per-user acknowledgement of a signal event ("Mark as reviewed").
+model UserSignalAck {
+  id            String   @id @default(cuid())
+  userId        String
+  signalEventId String
+  acknowledgedAt DateTime @default(now())
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  signal SignalEvent @relation(fields: [signalEventId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, signalEventId])
+  @@index([userId])
+}
+
+model StockNote {
+  id        String   @id @default(cuid())
+  userId    String
+  ticker    String
+  content   String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, ticker, createdAt])
+}
+
+model MarketEvent {
+  id           String   @id @default(cuid())
+  ticker       String
+  title        String
+  type         String // "earnings" | "product-launch" | "economic-data" | "dividend" | "conference"
+  date         DateTime
+  timeLabel    String?
+}
